@@ -1,0 +1,74 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:android)
+
+platform :android do
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+  lane :publish_to_gh do
+    publishFileName = "../publish.properties"
+    majorVersion="1"
+    minorVersion="0"
+    mmVersion="#{majorVersion}.#{minorVersion}."
+
+    url = "https://api.github.com/users/AnasEsh/packages/maven/com.mobily.composeformstateutils/versions"
+    uri = URI(url)
+
+    # Set up HTTP request with headers
+    request = Net::HTTP::Get.new(uri)
+    request['Accept'] = 'application/vnd.github+json'
+    request['Authorization'] = "Bearer #{ENV["gh_package_cred"]}"  # Use environment variable for token
+    request['X-GitHub-Api-Version'] = '2022-11-28'  # Adjust based on official documentation
+
+    # Make the HTTP request (consider error handling)
+    response = Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+      http.request(request)
+    end
+
+    publishedVersions = JSON.parse(response.body).map { |realeaseDetails| realeaseDetails["name"] }
+    sameMMVersions = publishedVersions.select { |version| version.start_with?(mmVersion) }
+    buildVersion =
+    if sameMMVersions.empty?
+      "-1"
+    else
+      sameMMVersions.first.split('.').last
+    end
+    newVersion = "VERSION=#{mmVersion}#{buildVersion.to_i+1}"
+    puts "new version is -> #{newVersion}"
+    File.open(publishFileName, "w") do |file|
+      file.write(newVersion)
+    end
+    gradle(task:":compose-form-state-utils:assembleRelease")
+    gradle(task:":compose-form-state-utils:publish")
+  end
+
+  desc "Submit a new Beta Build to Crashlytics Beta"
+  lane :beta do
+    gradle(task: "clean assembleRelease")
+    crashlytics
+
+    # sh "your_script.sh"
+    # You can also use other beta testing services here
+  end
+
+  desc "Deploy a new version to the Google Play"
+  lane :deploy do
+    gradle(task: "clean assembleRelease")
+    upload_to_play_store
+  end
+end
